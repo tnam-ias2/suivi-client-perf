@@ -1,0 +1,372 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Suivi client perf</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500&display=block" rel="stylesheet">
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
+  <script src="analyse.js"></script>
+  <style>
+    :root {
+      --vert: #2D5E4A;
+      --sauge: #5C9877;
+      --vert-clair: #A6F781;
+      --vert-profond: #013220;
+      --fluo: #6EFF29;
+      --noir: #000000;
+      --blanc: #FFFFFF;
+      --gris: #EEEEEE;
+      --axe: #595959;
+      --grille: #D9D9D9;
+      --non: #CC0000;
+      --font: "Outfit", "Avenir Next", "Century Gothic", sans-serif;
+    }
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body { font-family: var(--font); font-weight: 300; color: var(--noir); background: var(--blanc); line-height: 1.5; }
+    h1, h2, h3 { font-weight: 300; text-transform: uppercase; letter-spacing: .06em; }
+    b { font-weight: 500; }
+    button, select, input { font-family: inherit; font-size: inherit; font-weight: 400; }
+    .wrap { max-width: 1180px; margin: 0 auto; padding: 0 32px; }
+    .sq { display: inline-block; width: 10px; height: 10px; background: var(--fluo); flex: none; }
+
+    header { background: var(--vert-profond); color: var(--blanc); padding: 28px 0; }
+    header .wrap { display: flex; align-items: center; justify-content: space-between; gap: 24px; flex-wrap: wrap; }
+    header h1 { font-size: 1.9rem; display: flex; align-items: center; gap: 14px; }
+    header p { color: var(--vert-clair); font-size: .95rem; margin-top: 4px; }
+    .btn { background: var(--fluo); color: var(--noir); border: 0; padding: 12px 22px; cursor: pointer; text-transform: uppercase; letter-spacing: .06em; font-size: .85rem; }
+    .btn:hover { background: var(--vert-clair); }
+    .btn.ghost { background: transparent; color: var(--blanc); outline: 1px solid var(--sauge); }
+    .btn.ghost:hover { background: var(--vert); }
+    #fileInput { display: none; }
+
+    main.wrap { padding-top: 36px; padding-bottom: 60px; }
+    #drop { background: var(--gris); padding: 80px 30px; text-align: center; cursor: pointer; outline: 2px dashed transparent; outline-offset: -14px; }
+    #drop.over { outline-color: var(--vert); background: var(--vert-clair); }
+    #drop h2 { font-size: 1.4rem; margin: 18px 0 8px; }
+    #drop p { color: var(--axe); max-width: 560px; margin: 0 auto; }
+    #drop .icon { width: 56px; height: 56px; background: var(--vert-clair); display: inline-flex; align-items: center; justify-content: center; }
+    #drop .icon span { width: 18px; height: 18px; background: var(--vert); }
+    #error { display: none; background: var(--gris); border-left: 4px solid var(--non); padding: 14px 18px; margin-bottom: 24px; }
+    #error.on { display: block; }
+
+    #report { display: none; }
+    #report.on { display: block; }
+    .bar { display: flex; align-items: center; gap: 18px; flex-wrap: wrap; margin-bottom: 28px; }
+    .bar .file { display: flex; align-items: center; gap: 10px; margin-right: auto; color: var(--axe); font-size: .9rem; }
+    .bar label { font-size: .75rem; text-transform: uppercase; letter-spacing: .08em; color: var(--axe); display: flex; flex-direction: column; gap: 4px; }
+    select, input[type=search] { background: var(--gris); border: 0; padding: 10px 14px; color: var(--noir); min-width: 180px; }
+
+    .kpis { display: grid; grid-template-columns: repeat(4, 1fr); gap: 16px; margin-bottom: 40px; }
+    .kpi { background: var(--gris); padding: 20px 22px; }
+    .kpi .lbl { font-size: .75rem; text-transform: uppercase; letter-spacing: .08em; color: var(--axe); display: flex; align-items: center; gap: 8px; }
+    .kpi .val { font-size: 2.1rem; color: var(--vert); margin-top: 6px; line-height: 1.2; }
+    .kpi .sub { font-size: .85rem; color: var(--axe); }
+
+    section { margin-bottom: 44px; }
+    section > h2 { font-size: 1.15rem; margin-bottom: 16px; display: flex; align-items: center; gap: 12px; }
+    .insights { display: grid; grid-template-columns: 1fr 1fr; gap: 28px; }
+    .col h2 { font-size: 1.15rem; padding: 14px 18px; margin-bottom: 12px; }
+    .col.plus h2 { background: var(--vert-clair); }
+    .col.minus h2 { background: var(--vert-profond); color: var(--blanc); }
+    .card { display: grid; grid-template-columns: 44px 1fr; gap: 16px; background: var(--gris); padding: 18px; margin-bottom: 10px; }
+    .num { width: 44px; height: 44px; display: flex; align-items: center; justify-content: center; font-size: 1rem; }
+    .plus .num { background: var(--fluo); }
+    .minus .num { background: var(--vert-profond); color: var(--blanc); }
+    .card h3 { font-size: .9rem; display: flex; justify-content: space-between; gap: 12px; align-items: baseline; }
+    .card h3 .fig { font-size: 1.25rem; color: var(--vert); text-transform: none; letter-spacing: 0; white-space: nowrap; }
+    .card p { font-size: .92rem; margin-top: 4px; }
+
+    .chart-box { height: 340px; }
+
+    .tools { display: flex; justify-content: space-between; align-items: center; gap: 12px; margin-bottom: 12px; flex-wrap: wrap; }
+    .tools .count { color: var(--axe); font-size: .85rem; }
+    .tbl-wrap { max-height: 560px; overflow: auto; }
+    table { width: 100%; border-collapse: collapse; font-size: .9rem; }
+    th { position: sticky; top: 0; background: var(--vert); color: var(--blanc); font-weight: 400; text-transform: uppercase; letter-spacing: .05em; font-size: .75rem; text-align: right; padding: 10px 12px; cursor: pointer; user-select: none; white-space: nowrap; }
+    th:first-child, td:first-child, th.l, td.l { text-align: left; }
+    th[data-dir="asc"]::after { content: " ▲"; }
+    th[data-dir="desc"]::after { content: " ▼"; }
+    td { padding: 9px 12px; text-align: right; border-bottom: 1px solid var(--grille); white-space: nowrap; }
+    td:first-child { white-space: normal; }
+    tr:hover td { background: var(--gris); }
+    .up { color: var(--vert); }
+    .spark { display: inline-block; vertical-align: middle; }
+    .share { display: inline-block; height: 8px; background: var(--sauge); vertical-align: middle; margin-right: 8px; }
+
+    footer { background: var(--gris); padding: 18px 0; font-size: .8rem; color: var(--axe); }
+    footer .wrap { display: flex; align-items: center; gap: 10px; }
+
+    @media (max-width: 860px) {
+      .kpis { grid-template-columns: 1fr 1fr; }
+      .insights { grid-template-columns: 1fr; }
+      .wrap { padding: 0 18px; }
+    }
+    @media print {
+      header .btn, .bar select, #tableSection { display: none; }
+    }
+  </style>
+</head>
+<body>
+  <header>
+    <div class="wrap">
+      <div>
+        <h1><span class="sq"></span>Suivi client perf</h1>
+        <p>Importez un report mensuel : 3 points saillants et 3 points de vigilance sont générés automatiquement.</p>
+      </div>
+      <div>
+        <button class="btn" id="pickBtn">Importer un report</button>
+        <input type="file" id="fileInput" accept=".xlsx,.xls,.csv">
+      </div>
+    </div>
+  </header>
+
+  <main class="wrap">
+    <div id="error"></div>
+
+    <div id="drop">
+      <div class="icon"><span></span></div>
+      <h2>Déposez votre report ici</h2>
+      <p>Fichier .xlsx, .xls ou .csv avec une ligne par compte et une colonne par mois (AAAA-MM), par exemple l'export « Publisher Agg Crb ». Une colonne CSM est détectée automatiquement pour filtrer par portefeuille.</p>
+    </div>
+
+    <div id="report">
+      <div class="bar">
+        <div class="file"><span class="sq"></span><span id="fileName"></span></div>
+        <label id="groupWrap">Portefeuille<select id="groupSel"></select></label>
+        <label>Mois analysé<select id="monthSel"></select></label>
+      </div>
+
+      <div class="kpis" id="kpis"></div>
+
+      <section class="insights">
+        <div class="col plus">
+          <h2>3 points saillants</h2>
+          <div id="highlights"></div>
+        </div>
+        <div class="col minus">
+          <h2>3 points de vigilance</h2>
+          <div id="watchpoints"></div>
+        </div>
+      </section>
+
+      <section>
+        <h2><span class="sq"></span>Évolution mensuelle</h2>
+        <div class="chart-box"><canvas id="chart"></canvas></div>
+      </section>
+
+      <section id="tableSection">
+        <div class="tools">
+          <h2 style="font-size:1.15rem;display:flex;align-items:center;gap:12px"><span class="sq"></span>Détail par compte</h2>
+          <div style="display:flex;gap:14px;align-items:center">
+            <span class="count" id="rowCount"></span>
+            <input type="search" id="search" placeholder="Rechercher un compte">
+          </div>
+        </div>
+        <div class="tbl-wrap">
+          <table>
+            <thead><tr id="thead"></tr></thead>
+            <tbody id="tbody"></tbody>
+          </table>
+        </div>
+      </section>
+    </div>
+  </main>
+
+  <footer>
+    <div class="wrap"><span class="sq"></span>Analyse 100 % locale : le fichier est lu dans votre navigateur et n'est jamais envoyé sur un serveur.</div>
+  </footer>
+
+  <script>
+    const S = window.SuiviPerf;
+    const $ = (id) => document.getElementById(id);
+    const SERIES = ["#2D5E4A", "#5C9877", "#6EFF29", "#A6F781", "#013220", "#595959"];
+    const state = { report: null, group: "", monthIndex: null, sort: { key: "cur", dir: "desc" }, query: "" };
+    let chart = null;
+
+    function showError(msg) {
+      $("error").textContent = msg || "";
+      $("error").classList.toggle("on", !!msg);
+    }
+
+    function readFile(file) {
+      if (!file) return;
+      showError("");
+      const reader = new FileReader();
+      reader.onload = (e) => loadWorkbook(e.target.result, file.name);
+      reader.onerror = () => showError("Lecture du fichier impossible.");
+      reader.readAsArrayBuffer(file);
+    }
+
+    function loadWorkbook(buffer, fileName) {
+      try {
+        const wb = XLSX.read(buffer, { type: "array", cellDates: true });
+        let report = null, lastErr = null;
+        for (const name of wb.SheetNames) {
+          const rows = XLSX.utils.sheet_to_json(wb.Sheets[name], { header: 1, defval: null, raw: true });
+          try { report = S.parseReport(rows); break; } catch (err) { lastErr = err; }
+        }
+        if (!report) throw lastErr || new Error("Aucun onglet exploitable.");
+        state.report = report;
+        state.group = "";
+        state.monthIndex = report.months.length - 1;
+        state.query = "";
+        $("search").value = "";
+        $("fileName").textContent = `${fileName} · ${report.entities.length} comptes · ${report.metric}`;
+        fillSelects();
+        $("drop").style.display = "none";
+        $("report").classList.add("on");
+        $("pickBtn").textContent = "Changer de report";
+        render();
+      } catch (err) {
+        showError(`Ce fichier n'a pas pu être analysé : ${err.message}`);
+      }
+    }
+
+    function fillSelects() {
+      const r = state.report;
+      $("groupWrap").style.display = r.groups.length > 1 ? "" : "none";
+      $("groupWrap").firstChild.textContent = r.groupLabel || "Portefeuille";
+      $("groupSel").innerHTML = `<option value="">Tous</option>` + r.groups.map((g) => `<option>${S.esc(g)}</option>`).join("");
+      $("monthSel").innerHTML = r.months.map((m, k) => k ? `<option value="${k}">${S.monthLabel(m)}</option>` : "").join("");
+      $("monthSel").value = String(state.monthIndex);
+    }
+
+    function render() {
+      const a = S.analyse(state.report, { group: state.group || null, monthIndex: state.monthIndex });
+      state.analysis = a;
+      renderKpis(a);
+      renderInsights($("highlights"), a.highlights);
+      renderInsights($("watchpoints"), a.watchpoints);
+      renderChart(a);
+      renderTable();
+    }
+
+    function renderKpis(a) {
+      const M = S.monthLabel(a.month), P = S.monthLabel(a.prevMonth), F = S.monthLabel(state.report.months[0]);
+      const k = [
+        { lbl: a.metric, val: S.fmtVol(a.cur), sub: M },
+        { lbl: "Vs mois précédent", val: S.fmtPct(a.mom), sub: `${S.fmtDelta(a.cur - a.prv)} vs ${P}` },
+        { lbl: "Vs début de période", val: a.vsStart == null ? "—" : S.fmtPct(a.vsStart), sub: `vs ${F}` },
+        { lbl: "Comptes actifs", val: `${a.active}`, sub: `sur ${a.count} comptes suivis` },
+      ];
+      $("kpis").innerHTML = k.map((x) => `<div class="kpi"><div class="lbl"><span class="sq"></span>${S.esc(x.lbl)}</div><div class="val">${x.val}</div><div class="sub">${S.esc(x.sub)}</div></div>`).join("");
+    }
+
+    function renderInsights(el, items) {
+      el.innerHTML = items.map((x, k) => `
+        <div class="card">
+          <div class="num">0${k + 1}</div>
+          <div>
+            <h3><span>${S.esc(x.title)}</span><span class="fig">${S.esc(x.value)}</span></h3>
+            <p>${x.text}</p>
+          </div>
+        </div>`).join("");
+    }
+
+    function renderChart(a) {
+      const r = state.report;
+      const months = r.months.slice(0, a.monthIndex + 1);
+      const groups = !state.group && r.groups.length > 1 ? r.groups : [state.group || null];
+      const datasets = groups.map((g, k) => ({
+        label: g || r.metric,
+        data: months.map((_, m) => r.entities.filter((e) => !g || e.group === g).reduce((s, e) => s + (e.values[m] ?? 0), 0)),
+        backgroundColor: SERIES[k % SERIES.length],
+        borderWidth: 0,
+        stack: "s",
+      }));
+      Chart.defaults.font.family = getComputedStyle(document.documentElement).getPropertyValue("--font");
+      Chart.defaults.font.weight = 300;
+      Chart.defaults.color = "#595959";
+      if (chart) chart.destroy();
+      chart = new Chart($("chart"), {
+        type: "bar",
+        data: { labels: months.map((m) => S.monthLabel(m, true)), datasets },
+        options: {
+          maintainAspectRatio: false,
+          animation: false,
+          plugins: {
+            legend: { display: datasets.length > 1, position: "bottom", labels: { boxWidth: 12, boxHeight: 12 } },
+            tooltip: {
+              backgroundColor: "#013220", cornerRadius: 0, padding: 10,
+              callbacks: {
+                label: (c) => ` ${c.dataset.label} : ${S.fmtVol(c.raw)}`,
+                footer: (items) => items.length > 1 ? `Total : ${S.fmtVol(items.reduce((s, i) => s + i.raw, 0))}` : "",
+              },
+            },
+          },
+          interaction: { mode: "index", intersect: false },
+          scales: {
+            x: { stacked: true, grid: { display: false }, border: { color: "#D9D9D9" } },
+            y: { stacked: true, grid: { color: "#D9D9D9" }, border: { display: false }, ticks: { callback: (v) => S.fmtVol(v) } },
+          },
+        },
+      });
+    }
+
+    function spark(series) {
+      const w = 80, h = 22, vals = series.map((v) => v ?? 0);
+      const max = Math.max(...vals), min = Math.min(...vals);
+      const pts = vals.map((v, i) => `${(i / Math.max(vals.length - 1, 1)) * w},${h - 2 - ((v - min) / ((max - min) || 1)) * (h - 4)}`).join(" ");
+      return `<svg class="spark" width="${w}" height="${h}"><polyline fill="none" stroke="#2D5E4A" stroke-width="1.5" points="${pts}"/></svg>`;
+    }
+
+    function renderTable() {
+      const a = state.analysis, r = state.report;
+      const showGroup = !state.group && r.groups.length > 1;
+      const cols = [
+        { key: "name", label: "Compte", cls: "l" },
+        ...(showGroup ? [{ key: "group", label: r.groupLabel || "Groupe", cls: "l" }] : []),
+        { key: "prev", label: S.monthLabel(a.prevMonth, true) },
+        { key: "cur", label: S.monthLabel(a.month, true) },
+        { key: "delta", label: "Écart" },
+        { key: "pct", label: "Évol." },
+        { key: "share", label: "Part" },
+        { key: null, label: "Tendance" },
+      ];
+      const { key, dir } = state.sort;
+      $("thead").innerHTML = cols.map((c) => `<th class="${c.cls || ""}" data-key="${c.key ?? ""}" ${c.key === key ? `data-dir="${dir}"` : ""}>${S.esc(c.label)}</th>`).join("");
+
+      const q = state.query.toLowerCase();
+      const rows = a.rows.filter((x) => !q || x.name.toLowerCase().includes(q))
+        .sort((x, y) => {
+          const u = x[key], v = y[key];
+          const c = typeof u === "string" ? u.localeCompare(v, "fr") : (u ?? -Infinity) - (v ?? -Infinity);
+          return dir === "asc" ? c : -c;
+        });
+      const maxShare = Math.max(...a.rows.map((x) => x.share), 0.0001);
+      $("rowCount").textContent = `${rows.length} compte${rows.length > 1 ? "s" : ""}`;
+      $("tbody").innerHTML = rows.map((x) => `
+        <tr>
+          <td>${S.esc(x.name)}</td>
+          ${showGroup ? `<td class="l">${S.esc(x.group)}</td>` : ""}
+          <td>${S.fmtVol(x.prev)}</td>
+          <td>${S.fmtVol(x.cur)}</td>
+          <td class="${x.delta > 0 ? "up" : ""}">${x.delta ? S.fmtDelta(x.delta) : "—"}</td>
+          <td class="${x.pct > 0 ? "up" : ""}">${S.fmtPct(x.pct)}</td>
+          <td><span class="share" style="width:${(x.share / maxShare) * 50}px"></span>${S.fmtPct(x.share, false)}</td>
+          <td>${spark(x.series)}</td>
+        </tr>`).join("");
+    }
+
+    $("pickBtn").onclick = () => $("fileInput").click();
+    $("drop").onclick = () => $("fileInput").click();
+    $("fileInput").onchange = (e) => { readFile(e.target.files[0]); e.target.value = ""; };
+    ["dragenter", "dragover"].forEach((t) => document.addEventListener(t, (e) => { e.preventDefault(); $("drop").classList.add("over"); }));
+    ["dragleave", "drop"].forEach((t) => document.addEventListener(t, (e) => { e.preventDefault(); if (t === "drop" || !e.relatedTarget) $("drop").classList.remove("over"); }));
+    document.addEventListener("drop", (e) => readFile(e.dataTransfer.files[0]));
+    $("groupSel").onchange = (e) => { state.group = e.target.value; render(); };
+    $("monthSel").onchange = (e) => { state.monthIndex = +e.target.value; render(); };
+    $("search").oninput = (e) => { state.query = e.target.value; renderTable(); };
+    $("thead").onclick = (e) => {
+      const k = e.target.closest("th")?.dataset.key;
+      if (!k) return;
+      state.sort = state.sort.key === k ? { key: k, dir: state.sort.dir === "asc" ? "desc" : "asc" } : { key: k, dir: k === "name" || k === "group" ? "asc" : "desc" };
+      renderTable();
+    };
+  </script>
+</body>
+</html>
